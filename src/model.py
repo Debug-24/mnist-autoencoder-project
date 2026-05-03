@@ -5,84 +5,69 @@ class Autoencoder:
     def __init__(self, input_size=784, hidden_size=128, latent_size=32, lr=0.01):
         self.lr = lr
 
-        # Encoder weights: original image size -> hidden layer -> compressed layer
+        # encoder: reduce image size step by step
         self.W1 = np.random.randn(input_size, hidden_size) * 0.01
         self.b1 = np.zeros((1, hidden_size))
 
         self.W2 = np.random.randn(hidden_size, latent_size) * 0.01
         self.b2 = np.zeros((1, latent_size))
 
-        # Decoder weights: compressed layer -> hidden layer -> reconstructed image
+        # decoder: rebuild image back to original size
         self.W3 = np.random.randn(latent_size, hidden_size) * 0.01
         self.b3 = np.zeros((1, hidden_size))
 
         self.W4 = np.random.randn(hidden_size, input_size) * 0.01
         self.b4 = np.zeros((1, input_size))
 
-    def sigmoid(self, values):
-        return 1 / (1 + np.exp(-values))
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
 
-    def sigmoid_derivative(self, activated_values):
-        return activated_values * (1 - activated_values)
+    def sigmoid_derivative(self, a):
+        return a * (1 - a)
 
     def forward(self, X):
-        # Encoder part
-        self.encoder_input = X @ self.W1 + self.b1
-        self.encoder_hidden = self.sigmoid(self.encoder_input)
+        # encoder forward
+        self.h1 = self.sigmoid(X @ self.W1 + self.b1)
+        self.z = self.sigmoid(self.h1 @ self.W2 + self.b2)
 
-        self.latent_input = self.encoder_hidden @ self.W2 + self.b2
-        self.latent_vector = self.sigmoid(self.latent_input)
+        # decoder forward
+        self.h2 = self.sigmoid(self.z @ self.W3 + self.b3)
+        self.out = self.sigmoid(self.h2 @ self.W4 + self.b4)
 
-        # Decoder part
-        self.decoder_input = self.latent_vector @ self.W3 + self.b3
-        self.decoder_hidden = self.sigmoid(self.decoder_input)
+        return self.out
 
-        self.reconstruction_input = self.decoder_hidden @ self.W4 + self.b4
-        self.reconstructed_output = self.sigmoid(self.reconstruction_input)
-
-        return self.reconstructed_output
-
-    def compute_loss(self, original, reconstructed):
-        # Mean Squared Error between original image and reconstructed image
-        return np.mean((original - reconstructed) ** 2)
+    def compute_loss(self, X, output):
+        # difference between original and reconstructed image
+        return np.mean((X - output) ** 2)
 
     def backward(self, X):
-        batch_count = X.shape[0]
+        n = X.shape[0]
 
-        # Error at output layer
-        output_error = (self.reconstructed_output - X) * self.sigmoid_derivative(
-            self.reconstructed_output
-        )
+        # output layer gradient
+        d_out = (self.out - X) * self.sigmoid_derivative(self.out)
 
-        dW4 = self.decoder_hidden.T @ output_error / batch_count
-        db4 = np.sum(output_error, axis=0, keepdims=True) / batch_count
+        dW4 = self.h2.T @ d_out / n
+        db4 = np.sum(d_out, axis=0, keepdims=True) / n
 
-        # Backpropagate through decoder hidden layer
-        decoder_hidden_error = output_error @ self.W4.T
-        decoder_hidden_delta = decoder_hidden_error * self.sigmoid_derivative(
-            self.decoder_hidden
-        )
+        # decoder hidden
+        d_h2 = (d_out @ self.W4.T) * self.sigmoid_derivative(self.h2)
 
-        dW3 = self.latent_vector.T @ decoder_hidden_delta / batch_count
-        db3 = np.sum(decoder_hidden_delta, axis=0, keepdims=True) / batch_count
+        dW3 = self.z.T @ d_h2 / n
+        db3 = np.sum(d_h2, axis=0, keepdims=True) / n
 
-        # Backpropagate through latent compressed layer
-        latent_error = decoder_hidden_delta @ self.W3.T
-        latent_delta = latent_error * self.sigmoid_derivative(self.latent_vector)
+        # latent layer
+        d_z = (d_h2 @ self.W3.T) * self.sigmoid_derivative(self.z)
 
-        dW2 = self.encoder_hidden.T @ latent_delta / batch_count
-        db2 = np.sum(latent_delta, axis=0, keepdims=True) / batch_count
+        dW2 = self.h1.T @ d_z / n
+        db2 = np.sum(d_z, axis=0, keepdims=True) / n
 
-        # Backpropagate through encoder hidden layer
-        encoder_hidden_error = latent_delta @ self.W2.T
-        encoder_hidden_delta = encoder_hidden_error * self.sigmoid_derivative(
-            self.encoder_hidden
-        )
+        # encoder hidden
+        d_h1 = (d_z @ self.W2.T) * self.sigmoid_derivative(self.h1)
 
-        dW1 = X.T @ encoder_hidden_delta / batch_count
-        db1 = np.sum(encoder_hidden_delta, axis=0, keepdims=True) / batch_count
+        dW1 = X.T @ d_h1 / n
+        db1 = np.sum(d_h1, axis=0, keepdims=True) / n
 
-        # Gradient descent weight updates
+        # update weights
         self.W4 -= self.lr * dW4
         self.b4 -= self.lr * db4
 
@@ -95,8 +80,13 @@ class Autoencoder:
         self.W1 -= self.lr * dW1
         self.b1 -= self.lr * db1
 
+    # used for anomaly detection
+    def reconstruction_error(self, X):
+        recon = self.forward(X)
+        return np.mean((X - recon) ** 2, axis=1)
+
     def train_step(self, X):
-        reconstructed = self.forward(X)
-        loss = self.compute_loss(X, reconstructed)
+        out = self.forward(X)
+        loss = self.compute_loss(X, out)
         self.backward(X)
         return loss
