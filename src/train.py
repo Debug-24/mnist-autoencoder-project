@@ -42,25 +42,25 @@ def main():
             count += 1
 
         avg_loss = total_loss / count
-        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.6f}")
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
 
     print("\ntraining done!")
 
-    # anomaly test (digit 9)
+    # anomaly test: digit 9
     mask_normal = y_test != 9
     mask_anomaly = y_test == 9
 
     X_normal = X_test[mask_normal]
     X_anomaly = X_test[mask_anomaly]
 
-    # compute errors
+    # reconstruction errors
+    err_train = model.reconstruction_error(X_train)
     err_normal = model.reconstruction_error(X_normal)
     err_anomaly = model.reconstruction_error(X_anomaly)
 
-    # choose threshold (more sensitive than 95)
-    threshold = np.percentile(err_normal, 85)
+    # threshold from training data
+    threshold = np.percentile(err_train, 90)
 
-    # check how many are detected
     normal_flag = np.mean(err_normal > threshold) * 100
     anomaly_flag = np.mean(err_anomaly > threshold) * 100
 
@@ -70,6 +70,13 @@ def main():
     print(f"threshold: {threshold:.6f}")
     print(f"normal flagged: {normal_flag:.2f}%")
     print(f"digit 9 flagged: {anomaly_flag:.2f}%")
+
+    # check average error for each digit
+    print("\n--- error by digit ---")
+    for digit in range(10):
+        digit_mask = y_test == digit
+        digit_error = model.reconstruction_error(X_test[digit_mask])
+        print(f"digit {digit} avg error: {np.mean(digit_error):.6f}")
 
 
 if __name__ == "__main__":
